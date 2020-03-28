@@ -2,8 +2,8 @@ package maven
 
 import cats.effect.IO
 import io.circe.generic.auto._
+import org.http4s.{EntityDecoder, Request}
 import org.http4s.circe.jsonOf
-import org.http4s.{EntityDecoder, Uri}
 
 object MavenSearchResult {
   implicit val mavenSearchResultDecoder: EntityDecoder[IO, MavenSearchResult] =
@@ -13,5 +13,7 @@ object MavenSearchResult {
 case class MavenSearchResult(
   response: MavenSearchResultResponse,
 ) {
-  // def pomUris: List[Uri] = response.docs.map(_.pomUri)
+  def total: Int = response.numFound
+  def size: Int = response.docs.size
+  def reqs: List[Request[IO]] = response.docs.map(_.req)
 }

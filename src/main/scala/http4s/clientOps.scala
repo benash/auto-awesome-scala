@@ -1,6 +1,6 @@
 package http4s
 
-import cats.implicits._
+import cats.syntax.functor._
 import cats.effect.Bracket
 import org.http4s.client.Client
 import org.http4s.{EntityDecoder, Request}

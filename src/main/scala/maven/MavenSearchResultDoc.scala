@@ -14,7 +14,7 @@ case class MavenSearchResultDoc(
   private val baseUri = uri"https://search.maven.org/remotecontent"
   private val gId = g.replaceAllLiterally(".", "/")
 
-  def uri: Uri = baseUri.withQueryParam("filepath", s"$gId/$a/$latestVersion/$a-$latestVersion.pom")
+  private def uri: Uri = baseUri.withQueryParam("filepath", s"$gId/$a/$latestVersion/$a-$latestVersion.pom")
   def req: Request[IO] = Request[IO](GET).withUri(uri)
 
   override def toString: String = s"$g/$a"

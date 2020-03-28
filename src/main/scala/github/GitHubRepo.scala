@@ -11,10 +11,13 @@ object GitHubRepo {
 
 case class GitHubRepo(
   name: String,
+  full_name: String,
   description: Option[String],
   html_url: String,
   stargazers_count: Int,
   pushed_at: String,
   archived: Boolean,
   disabled: Boolean,
-)
+) {
+  def md: String = s"| [$name]($html_url) | ${description.getOrElse("")} | ![](https://img.shields.io/github/stars/$full_name) ![](https://img.shields.io/github/last-commit/$full_name) |"
+}
