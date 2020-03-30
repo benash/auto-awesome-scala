@@ -1,3 +1,4 @@
+import java.io.{BufferedWriter, File, FileWriter}
 import java.time.Duration
 
 import cats.effect._
@@ -29,6 +30,13 @@ object Main extends IOApp {
     } yield project.req
   }
 
+  def writeFile(filename: String, s: String): Unit = {
+    val file = new File(filename)
+    val bw = new BufferedWriter(new FileWriter(file))
+    bw.write(s)
+    bw.close()
+  }
+
   def run(args: List[String]): IO[ExitCode] = {
     val limit = args match {
       case limit :: Nil => limit.toInt
@@ -50,7 +58,7 @@ object Main extends IOApp {
         result: MavenSearchResult <- client.expect[MavenSearchResult](mavenSearchRequest.uri)
         _ <- IO.delay(println(s"Found ${result.total} artifacts; limiting to ${result.size}"))
         limit <- RateLimit(10, 1.second)
-        pomResults: List[Pom] <- result.reqs.parFlatTraverse(limit.exert(interceptReq(client.expectOptionList[Pom])))
+        pomResults: List[Pom] <- result.reqs.parFlatTraverse(limit.throttle(interceptReq(client.expectOptionList[Pom])))
         _ <- IO.delay(println(s"Retrieved ${pomResults.size} poms"))
         distinctReqs = distinctRepoRequests((pomResults))
         _ <- IO.delay(println(s"Narrowed to ${distinctReqs.size} reqs"))
@@ -58,12 +66,14 @@ object Main extends IOApp {
       } yield repos
     }.unsafeRunSync()
 
-
-    IO.delay(println("""
+    val header = """
       || Name | Description | GitHub Stats |
-      || --- | --- | --- |""".stripMargin)).unsafeRunSync()
+      || --- | --- | --- |
+      |""".stripMargin
 
-    repos.foreach((repo: GitHubRepo) => println(repo.md))
+    val repoLines: String = repos.map(_.md).mkString("\n")
+
+    writeFile("output.md", header + repoLines)
     IO(ExitCode.Success)
   }
 }
