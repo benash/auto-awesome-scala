@@ -2,6 +2,7 @@ val Http4sVersion = "0.21.2"
 val CirceVersion = "0.13.0"
 val Specs2Version = "4.8.3"
 val LogbackVersion = "1.2.3"
+val CatsVersion = "2.2.0-M1"
 
 lazy val root = (project in file("."))
   .settings(
@@ -10,6 +11,7 @@ lazy val root = (project in file("."))
     version := "0.0.1-SNAPSHOT",
     scalaVersion := "2.13.1",
     libraryDependencies ++= Seq(
+      "org.typelevel" %% "cats-core" % CatsVersion,
       "org.http4s" %% "http4s-blaze-server" % Http4sVersion,
       "org.http4s" %% "http4s-blaze-client" % Http4sVersion,
       "org.http4s" %% "http4s-circe" % Http4sVersion,

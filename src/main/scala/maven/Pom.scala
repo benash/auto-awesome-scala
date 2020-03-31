@@ -32,8 +32,8 @@ object Pom {
 
 // TODO filter on scala-lang dependency
 case class Pom(root: Node) {
-  def urls: Seq[String] = {
+  def urls: List[String] = {
     val nodes = (root \ "url") ++ (root \ "scm" \ "url")
-    nodes.map(_.text)
+    nodes.map(_.text).toList
   }
 }
