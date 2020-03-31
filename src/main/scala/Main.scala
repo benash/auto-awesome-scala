@@ -37,32 +37,27 @@ object Main extends IOApp {
     bw.close()
   }
 
-  def run(args: List[String]): IO[ExitCode] = {
-    val limit = args match {
-      case limit :: Nil => limit.toInt
-      case _ => throw new RuntimeException("bad args")
+  case class ParsedArgs(limit: Int, updatedWithinDays: Int)
+  object ParsedArgs {
+    def apply(args: List[String]): IO[ParsedArgs] = args match {
+      case limit :: updatedSinceDays :: Nil => IO.delay(ParsedArgs(limit.toInt, updatedSinceDays.toInt))
+      case _ => IO.raiseError(new RuntimeException("bad args"))
     }
+  }
 
-    val mavenSearchRequest: MavenSearchRequest = MavenSearchRequest(
-      limit = limit,
-      updatedWithin = Duration.ofDays(365),
-    )
-
-    def interceptReq[B](f: Request[IO] => IO[B]): Request[IO] => IO[B] = (input: Request[IO]) => for {
-      _ <- IO.delay(println(s"Request: ${input.uri}"))
-      res <- f(input)
-    } yield res
-
+  def run(args: List[String]): IO[ExitCode] = {
     val repos = BlazeClientBuilder[IO](global).resource.use { client =>
       for {
-        result: MavenSearchResult <- client.expect[MavenSearchResult](mavenSearchRequest.uri)
-        _ <- IO.delay(println(s"Found ${result.total} artifacts; limiting to ${result.size}"))
+        parsed <- ParsedArgs(args)
+        mavenRequest = MavenSearchRequest(parsed.limit, parsed.updatedWithinDays)
+        result: MavenSearchResult <- client.expect[MavenSearchResult](mavenRequest.uri)
+            .flatTap(r => IO.delay(println(s"Found ${r.total} artifacts; limited to ${r.size}")))
         limit <- RateLimit(10, 1.second)
-        pomResults: List[Pom] <- result.reqs.parFlatTraverse(limit.throttle(interceptReq(client.expectOptionList[Pom])))
-        _ <- IO.delay(println(s"Retrieved ${pomResults.size} poms"))
-        distinctReqs = distinctRepoRequests((pomResults))
-        _ <- IO.delay(println(s"Narrowed to ${distinctReqs.size} reqs"))
-        repos: List[GitHubRepo] <- distinctReqs.parFlatTraverse(interceptReq(client.expectOptionList[GitHubRepo]))
+        pomResults: List[Pom] <- result.reqs.parFlatTraverse(limit.throttle(client.expectOptionList[Pom]))
+            .flatTap(r => IO.delay(println(s"Retrieved ${r.size} poms")))
+        distinctReqs = distinctRepoRequests(pomResults)
+        repos: List[GitHubRepo] <- distinctReqs.parFlatTraverse(client.expectOptionList[GitHubRepo])
+          .flatTap(r => IO.delay(println(s"Retrieved ${r.size} repos")))
       } yield repos
     }.unsafeRunSync()
 

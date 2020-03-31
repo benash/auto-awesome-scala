@@ -14,7 +14,7 @@ object RateLimit {
 
 case class RateLimit(sem: Semaphore[IO], span: FiniteDuration) {
   def throttle[A, B](function: A => IO[B])
-    (implicit timer: Timer[IO], cs: ContextShift[IO]) : A => IO[B] = (input: A) => {
+    (implicit timer: Timer[IO], cs: ContextShift[IO]): A => IO[B] = (input: A) => {
     sem.withPermit {
       IO.sleep(span) &> function(input)
     }
