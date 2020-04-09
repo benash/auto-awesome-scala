@@ -1,35 +1,45 @@
-import cats.effect._
-import cats.implicits._
+import cats.effect.{ExitCode, IO, IOApp}
+import cats.syntax.flatMap.toFlatMapOps
 import github.{GitHubProject, GitHubRepo, GitHubToken}
-import http4s.clientOps._
-import maven.MavenSearchResult.mavenSearchResultDecoder
 import maven.{MavenSearchRequest, MavenSearchResult, Pom}
+import org.http4s.client.Client
 import org.http4s.client.blaze.BlazeClientBuilder
 import ratelimit.RateLimit
 
 import scala.concurrent.ExecutionContext.global
-import scala.concurrent.duration._
+import scala.concurrent.duration.DurationLong
 
 object Main extends IOApp {
+  def parseArgs(args: List[String]): MavenSearchRequest = args match {
+    case updatedWithinDaysArg :: rowStartArg :: rowCountArg :: Nil => MavenSearchRequest(
+      rowStart = rowStartArg.toInt,
+      rowCount = rowCountArg.toInt,
+      updatedWithin = java.time.Duration.ofDays(updatedWithinDaysArg.toLong),
+    )
+    case _ => throw new RuntimeException("bad args")
+  }
 
-  implicit val gitHubToken: GitHubToken = GitHubToken(sys.env("GITHUB_TOKEN"))
+  val gitHubToken: GitHubToken = GitHubToken(sys.env("GITHUB_TOKEN"))
 
   def run(args: List[String]): IO[ExitCode] = {
-    BlazeClientBuilder[IO](global).resource.use { client =>
-      for {
-        parsed <- ParsedArgs(args)
-        mavenRequest = MavenSearchRequest(parsed.limit, parsed.updatedWithinDays)
-        mavenSearchResult <- client.expect[MavenSearchResult](mavenRequest.uri)
-            .flatTap(r => IO.delay(println(s"Found ${r.total} artifacts; limited to ${r.size}")))
-        limit <- RateLimit(10, 1.second)
-        poms <- mavenSearchResult.reqs.parFlatTraverse(limit.throttle(client.expectOptionList[Pom]))
+    val mavenRequest = parseArgs(args)
+    val mavenLimit: IO[RateLimit] = RateLimit(10, 750.millis)
+
+    BlazeClientBuilder[IO](global).resource.use {
+      client: Client[IO] => {
+        val o = Orchestrator(client, mavenLimit, gitHubToken)
+        for {
+          mavenSearchResult: MavenSearchResult <- o.queryMaven(mavenRequest)
+          poms: List[Pom] <- o.downloadPoms(mavenSearchResult)
             .flatTap(r => IO.delay(println(s"Retrieved ${r.size} poms")))
-        distinctRepos = GitHubProject.of(poms).distinct
-        repos <- distinctRepos.parFlatTraverse(repo => client.expectOptionList[GitHubRepo](repo.req))
-          .flatTap(r => IO.delay(println(s"Retrieved ${r.size} repos")))
-        _ <- MdFile("output.md", repos).write
-      } yield ExitCode.Success
-    }.unsafeRunSync()
-    IO(ExitCode.Success)
+          distinctProjects: List[GitHubProject] = GitHubProject.of(poms.filter(_.isScala)).distinct
+          repos: List[GitHubRepo] <- o.getRepos(distinctProjects)
+          qualityRepos: List[GitHubRepo] = repos.filter(_.stargazers_count > 10)
+            .sortBy(_.stargazers_count)
+            .reverse
+          _ <- MdFile("output.md", qualityRepos).write
+        } yield ExitCode.Success
+      }
+    }
   }
 }

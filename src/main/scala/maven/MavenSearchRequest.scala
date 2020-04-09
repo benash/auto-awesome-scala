@@ -5,14 +5,7 @@ import java.time.{Duration, ZonedDateTime}
 import org.http4s.Uri
 import org.http4s.implicits._
 
-object MavenSearchRequest {
-  def apply(limit: Int, updatedWithinDays: Int): MavenSearchRequest = MavenSearchRequest(
-    limit = limit,
-    updatedWithin = Duration.ofDays(updatedWithinDays),
-  )
-}
-
-case class MavenSearchRequest(limit: Int, updatedWithin: Duration) {
+case class MavenSearchRequest(rowStart: Int, rowCount: Int, updatedWithin: Duration) {
   private def minMillis = ZonedDateTime.now()
     .minus(updatedWithin)
     .toInstant
@@ -20,6 +13,8 @@ case class MavenSearchRequest(limit: Int, updatedWithin: Duration) {
 
   def uri: Uri = uri"https://search.maven.org/solrsearch/select"
     .withQueryParam("q", s"timestamp:[$minMillis TO *]")
-    .withQueryParam("rows", limit)
+    .withQueryParam("rows", rowCount)
+    .withQueryParam("start", rowStart)
+    .withQueryParam("sort", "desc,timestamp")
     .withQueryParam("wt", "json")
 }

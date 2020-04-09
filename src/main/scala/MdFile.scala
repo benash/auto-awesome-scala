@@ -17,8 +17,5 @@ case class MdFile(filename: String, repos: List[GitHubRepo]) {
 
   private val repoLines: String = repos.map(_.md).mkString("\n")
 
-  def write = IO.delay {
-    println("GOT HERHERERE")
-    writeFile(filename, header + repoLines)
-  }
+  def write = IO.delay(writeFile(filename, header + repoLines))
 }

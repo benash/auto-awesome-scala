@@ -7,7 +7,6 @@ import org.http4s._
 
 import scala.xml.{Elem, Node}
 
-// TODO flatten invalid XML
 object Pom {
   private implicit val decoder: EntityDecoder[IO, Elem] = scalaxml.xml[IO]
   implicit val pomDecoder: EntityDecoder[IO, Pom] =
@@ -15,10 +14,6 @@ object Pom {
       EitherT {
         media
           .as[Elem]
-//          .handleError(e => {
-//            println("QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ POOP")
-//            <a></a>
-//          })
           .map { elem: Elem => Pom(elem).asRight[DecodeFailure] }
           .map {
             case Left(value) => {
@@ -30,10 +25,12 @@ object Pom {
     }
 }
 
-// TODO filter on scala-lang dependency
 case class Pom(root: Node) {
   def urls: List[String] = {
     val nodes = (root \ "url") ++ (root \ "scm" \ "url")
     nodes.map(_.text).toList
   }
+
+  def isScala: Boolean = (root \ "dependencies" \ "dependency" \ "artifactId")
+    .exists(_.text == "scala-library")
 }

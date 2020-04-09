@@ -13,6 +13,7 @@ case class GitHubRepo(
   name: String,
   full_name: String,
   description: Option[String],
+  language: Option[String],
   html_url: String,
   stargazers_count: Int,
   pushed_at: String,
