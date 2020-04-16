@@ -6,3 +6,4 @@ project/metals.sbt
 .env
 .bloop/
 .metals/
+*.cache.json

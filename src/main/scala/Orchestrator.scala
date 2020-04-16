@@ -1,40 +1,54 @@
-import cats.effect._
+import cats.effect.{ContextShift, IO, Timer}
 import cats.syntax.flatMap.toFlatMapOps
-import cats.syntax.parallel.catsSyntaxParallelFlatTraverse
+import cats.syntax.parallel.{catsSyntaxParallelFlatTraverse, catsSyntaxParallelTraverse}
 import github.{GitHubProject, GitHubRepo, GitHubToken}
+import http4s.ClientMiddleware._
 import http4s.clientOps._
 import maven.Pom._
-import maven.{MavenSearchRequest, MavenSearchResult, Pom}
-import org.http4s.client.Client
-import org.http4s.client.middleware.{FollowRedirect, RequestLogger}
-import ratelimit.RateLimit
+import maven.PomCache.PomLookup
+import maven._
+import org.http4s.client.middleware.FollowRedirect
+import org.http4s.client.{Client, UnexpectedStatus}
+import org.http4s.{Status, Uri}
 
-case class Orchestrator(client: Client[IO], mavenLimit: IO[RateLimit], gitHubToken: GitHubToken)(implicit timer: Timer[IO], cs: ContextShift[IO]) {
-  val mavenClient: Client[IO] = RequestLogger(
-    logHeaders = false,
-    logBody = false,
-    logAction = Some((s: String) => IO.delay(println(s))),
-  )(client)
+import scala.concurrent.duration.DurationLong
 
-  val c: Client[IO] = FollowRedirect(3)(client)
+case class Orchestrator(client: Client[IO], gitHubToken: GitHubToken)(implicit timer: Timer[IO], cs: ContextShift[IO]) {
+  val redirectedClient: Client[IO] = FollowRedirect(3)(client)
 
-  def queryMaven(request: MavenSearchRequest): IO[MavenSearchResult] =
+  def queryMaven(request: MavenSearchRequest): IO[List[Uri]] =
     client.expect[MavenSearchResult](request.uri)
+      .flatTap(_ => IO.delay(println(request.uri)))
       .flatTap(r => IO.delay(println(s"Found ${r.total} artifacts; limited to ${r.size}")))
+      .map(_.pomUris)
 
-  def downloadPoms(result: MavenSearchResult): IO[List[Pom]] = for {
-    limit <- mavenLimit
-    res <- result.reqs.parFlatTraverse { req =>
-      limit.throttle {
-        client.expectOptionList[Pom](req)
-          .handleErrorWith(_ => IO.delay(List()))
+  def retrievePoms(pomUris: List[Uri], cache: PomLookup): IO[List[PomResult]] = for {
+    limited <- Limited(10)
+    throttled = Throttled(750.millis)
+    mavenClient = limited(throttled(client))
+    _ <- IO(println(s"cache size: ${cache.size}"))
+    pomResults: List[PomResult] <- pomUris.parTraverse { (uri: Uri) =>
+      cache.get(uri) match {
+        case None => fetchPom(mavenClient, uri).flatTap(_ => IO(print("0")))
+        case Some(pomResult) => IO(print(".")).map(_ => pomResult)
       }
     }
-  } yield res
+    _ <- IO(println())
+  } yield pomResults
 
-  def getRepos(projects: List[GitHubProject]): IO[List[GitHubRepo]] = projects.parFlatTraverse {
-    repo => c.expectOptionList[GitHubRepo](repo.req(gitHubToken))
+  private def fetchPom(client: Client[IO], uri: Uri) = {
+    client.expect[Pom](uri)
+      .map(pom => PomResult.success(uri, pom))
+      .handleErrorWith {
+        case UnexpectedStatus(Status.NotFound) => IO(PomResult.failure(uri, Status.NotFound))
+      }
   }
-    .flatTap(r => IO.delay(println(s"Retrieved ${r.size} repos")))
-    .flatTap(r => IO.delay(r.foreach(println)))
+
+  def getRepos(projects: List[GitHubProject]): IO[List[GitHubRepo]] = for {
+    limited <- Limited(5)
+    logged = Logged.after(_ => print("0"))
+    gitHubClient = limited(logged(redirectedClient))
+    res <- projects.parFlatTraverse { repo => gitHubClient.expectOptionList[GitHubRepo](repo.req(gitHubToken)) }
+    _ <- IO(println(s"\nRetrieved ${res.size} repos"))
+  } yield res
 }

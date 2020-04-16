@@ -1,20 +1,20 @@
 package github
 
 import cats.effect.IO
-import maven.Pom
+import maven.PomInfo
 import org.http4s.Method.GET
 import org.http4s.implicits._
 import org.http4s.{Header, Headers, Request}
 
 object GitHubProject {
   private val gitHubUrl = """https://github.com/([\w-]+)/([\w-]+)(\.git)?""".r
-  def of(poms: List[Pom]): List[GitHubProject] = for {
-    pom <- poms
-    url <- pom.urls
-    project <- maybe(url)
+
+  def fromDistilledPom(pomInfo: PomInfo): List[GitHubProject] = for {
+    uri <- pomInfo.uris
+    project <- tryGitHubUrl(uri.renderString)
   } yield project
 
-  def maybe(url: String): Option[GitHubProject] = url match {
+  def tryGitHubUrl(url: String): Option[GitHubProject] = url match {
     case gitHubUrl(username, project, _) => Some(GitHubProject(username, project))
     case _ => None
   }
