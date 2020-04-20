@@ -9,7 +9,7 @@ import maven.PomCache.PomLookup
 import maven._
 import org.http4s.client.middleware.FollowRedirect
 import org.http4s.client.{Client, UnexpectedStatus}
-import org.http4s.{Status, Uri}
+import org.http4s.{MalformedMessageBodyFailure, Status, Uri}
 
 import scala.concurrent.duration.DurationLong
 
@@ -41,6 +41,7 @@ case class Orchestrator(client: Client[IO], gitHubToken: GitHubToken)(implicit t
       .map(pom => PomResult.success(uri, pom))
       .handleErrorWith {
         case UnexpectedStatus(Status.NotFound) => IO(PomResult.failure(uri, Status.NotFound))
+        case _: MalformedMessageBodyFailure => IO(PomResult.failure(uri, Status.UnprocessableEntity))
       }
   }
 

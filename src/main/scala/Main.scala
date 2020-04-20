@@ -22,13 +22,6 @@ object Main extends IOApp {
   val gitHubToken: GitHubToken = GitHubToken(sys.env("GITHUB_TOKEN"))
 
   def run(args: List[String]): IO[ExitCode] = {
-    import cats.implicits._
-    val n = args.headOption.flatMap(_.toIntOption).getOrElse(10)
-    (0 to n).map(i => run2(List(90.toString, (i * 1000).toString, 1000.toString)))
-        .reduce(_ *> _)
-  }
-
-  def run2(args: List[String]): IO[ExitCode] = {
     val mavenRequest = parseArgs(args)
 
     BlazeClientBuilder[IO](global)
